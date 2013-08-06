@@ -1,8 +1,13 @@
 #include <linux/string.h>
 #include <linux/module.h>
 
+#ifdef NOT_GENODE
 #undef memcpy
 #undef memset
+#else
+#undef lx_memcpy
+#undef lx_memset
+#endif /* NOT_GENODE */
 
 void *memcpy(void *to, const void *from, size_t n)
 {

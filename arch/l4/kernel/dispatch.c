@@ -138,6 +138,9 @@ static inline unsigned long l4x_handle_dev_mem(unsigned long phy)
 {
 	unsigned long devmem;
 
+	printk("l4x_handle_dev_mem(%lx) called - currently not supported on Genode.\n", phy);
+	return 0;
+
 #ifdef CONFIG_X86
 	if (phy > 0x80000000U) {
 		if (!(devmem = find_ioremap_entry(phy))
@@ -292,7 +295,7 @@ static int l4x_hybrid_return(struct thread_info *ti,
                 return 0;
 
 	if (l4_msgtag_is_page_fault(tag)) {
-		l4x_printf("HYBRID PF!!\n");
+		LOG_printf("HYBRID PF!!\n");
 		/* No exception IPC, it's a page fault, but shouldn't happen */
 		goto out_fail;
 	}
@@ -713,7 +716,7 @@ wait_again:
 			enter_kdebug("non hybrid in idle?!");
 		} else {
 			if (unlikely(l4x_handle_async_event(label, utcb, tag)))
-				l4x_printf("Async return with error\n");
+				LOG_printf("Async return with error\n");
 		}
 	}
 }

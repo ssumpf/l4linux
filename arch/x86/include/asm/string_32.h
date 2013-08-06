@@ -179,7 +179,11 @@ static inline void *__memcpy3d(void *to, const void *from, size_t len)
 #ifndef CONFIG_KMEMCHECK
 
 #if (__GNUC__ >= 4)
+#ifdef NOT_GENODE
 #define memcpy(t, f, n) __builtin_memcpy(t, f, n)
+#else
+#define lx_memcpy(t, f, n) __memcpy(t, f, n)
+#endif
 #else
 #define memcpy(t, f, n)				\
 	(__builtin_constant_p((n))		\
@@ -322,7 +326,11 @@ void *__constant_c_and_count_memset(void *s, unsigned long pattern,
 
 #define __HAVE_ARCH_MEMSET
 #if (__GNUC__ >= 4)
+#ifdef NOT_GENODE
 #define memset(s, c, count) __builtin_memset(s, c, count)
+#else
+#define lx_memset(s, c, count) __memset(s, c, count)
+#endif
 #else
 #define memset(s, c, count)						\
 	(__builtin_constant_p(c)					\

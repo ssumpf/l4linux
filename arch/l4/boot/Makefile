@@ -10,7 +10,7 @@ $(obj)/Image: vmlinux FORCE
 	$(call if_changed,objcopy)
 	@echo '  Kernel: $@ is ready'
 
-lImage: $(obj)/Image vmlinuz$(VMLINUZ_SUFFIX) l4linux$(VMLINUZ_SUFFIX)
+lImage: $(obj)/Image
 
 vmlinuz$(VMLINUZ_SUFFIX): ldrImage FORCE
 	$(call if_changed,gzip)
@@ -21,8 +21,8 @@ l4linux$(VMLINUZ_SUFFIX): ldrImage FORCE
 
 objects-y := ldr.o res.o image.o
 
-include $(L4OBJ)/l4defs.mk.inc
-
+#include $(L4OBJ)/l4defs.mk.inc
+KBUILD_CFLAGS_i386 = -m32
 KBUILD_CFLAGS	:= $(filter-out -mregparm=3,$(KBUILD_CFLAGS)) \
                    $(L4INC) -I$(L4OBJ)/include/uclibc \
 		   -Wall -fno-strict-aliasing -O2 -pipe \

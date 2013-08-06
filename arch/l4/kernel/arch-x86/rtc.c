@@ -162,6 +162,7 @@ unsigned long mach_get_cmos_time(void)
 /* Routines for accessing the CMOS RAM/RTC. */
 unsigned char rtc_cmos_read(unsigned char addr)
 {
+#ifdef NOT_GENODE
 #ifndef CONFIG_L4_EXTERNAL_RTC
 	unsigned char val;
 
@@ -174,17 +175,22 @@ unsigned char rtc_cmos_read(unsigned char addr)
 #else
 	return 0;
 #endif
+#else /* NOT_GENODE */
+	return 0;
+#endif /* NOT_GENODE */
 }
 EXPORT_SYMBOL(rtc_cmos_read);
 
 void rtc_cmos_write(unsigned char val, unsigned char addr)
 {
+#ifdef NOT_GENODE
 #ifndef CONFIG_L4_EXTERNAL_RTC
 	lock_cmos_prefix(addr);
 	outb(addr, RTC_PORT(0));
 	outb(val, RTC_PORT(1));
 	lock_cmos_suffix(addr);
 #endif
+#endif /* NOT_GENODE */
 }
 EXPORT_SYMBOL(rtc_cmos_write);
 

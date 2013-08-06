@@ -32,6 +32,8 @@ struct l4lx_thread_start_info_t {
  */
 void l4lx_thread_init(void);
 
+void l4lx_thread_alloc_irq(l4_cap_idx_t c);
+
 /**
  * \brief Create a thread.
  * \ingroup thread

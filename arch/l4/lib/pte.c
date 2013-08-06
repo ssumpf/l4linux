@@ -16,6 +16,7 @@
 
 #include <asm/l4lxapi/memory.h>
 
+#include <l4/log/log.h>
 #include <l4/sys/task.h>
 #include <l4/sys/kdebug.h>
 #include <l4/re/consts.h>
@@ -23,6 +24,8 @@
 #ifdef ARCH_arm
 #include <asm/l4x/dma.h>
 #endif
+
+extern void l4lx_memory_map_physical_page(unsigned long address);
 
 static void l4x_flush_page(struct mm_struct *mm,
                            unsigned long address,
@@ -34,8 +37,12 @@ static void l4x_flush_page(struct mm_struct *mm,
 
 	if (mm && mm->context.l4x_unmap_mode == L4X_UNMAP_MODE_SKIP)
 		return;
-
-	/* some checks: */
+#ifdef NOT_GENODE
+	/*
+	 * Device memory is currently not supported on Genode. If this changes,
+	 * a check for overlapping 'low memory' and 'device memory' regions
+	 * must get added.
+	 */
 	if (address > 0x80000000UL) {
 		unsigned long remap;
 		remap = find_ioremap_entry(address);
@@ -48,8 +55,10 @@ static void l4x_flush_page(struct mm_struct *mm,
 			return;
 
 		address = remap;
+	} else
+#endif /* NOT_GENODE */
 
-	} else if ((address & PAGE_MASK) == 0)
+	if ((address & PAGE_MASK) == 0)
 		address = PAGE0_PAGE_ADDRESS;
 
 #if 0
@@ -81,9 +90,10 @@ static void l4x_flush_page(struct mm_struct *mm,
 			                    l4_fpage(address & PAGE_MASK, size,
 		                                     flush_rights),
 			                    L4_FP_OTHER_SPACES));
+		l4lx_memory_map_physical_page(address);
 	}
 	if (l4_error(tag))
-		l4x_printf("l4_task_unmap error %ld\n", l4_error(tag));
+		LOG_printf("l4_task_unmap error %ld\n", l4_error(tag));
 }
 
 unsigned long l4x_set_pte(struct mm_struct *mm,

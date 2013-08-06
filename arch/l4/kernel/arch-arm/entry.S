@@ -81,7 +81,6 @@ sys_mmap2:
 		mov	r0, #-EINVAL
 		mov	pc, lr
 #else
-		str	r5, [sp, #4]
 		b	sys_mmap_pgoff
 #endif
 ENDPROC(sys_mmap2)

@@ -53,6 +53,7 @@ ENTRY(swapper_pg_dir)
 .previous
 #endif
 
+#ifdef NOT_GENODE
 #ifdef ARCH_arm
 .section ".text"
 .globl _start
@@ -82,6 +83,10 @@ __address_l4re_global_env:
 __address_l4lx_kinfo:
 	.long l4lx_kinfo
 .previous
+#endif
+#endif /* NOT_GENODE */
+
+#ifdef ARCH_arm
 .section .data.head, "wa"
 .p2align 12
 ENTRY(swapper_pg_dir)

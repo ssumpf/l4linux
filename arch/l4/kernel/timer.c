@@ -224,12 +224,16 @@ static int __init l4x_timer_init_ret(void)
 		return -ENOMEM;
 	}
 
+#if 0
 	r = L4XV_FN_i(l4_error(l4_factory_create_irq(l4re_env()->factory,
 	                                             timer_irq_cap)));
 	if (r) {
 		printk(KERN_ERR "l4timer: Failed to create irq: %d\n", r);
 		goto out1;
 	}
+#else
+	l4lx_thread_alloc_irq(timer_irq_cap);
+#endif
 
 	if ((irq = l4x_register_irq(timer_irq_cap)) < 0) {
 		r = -ENOMEM;
@@ -237,6 +241,7 @@ static int __init l4x_timer_init_ret(void)
 	}
 
 	printk("l4timer: Using IRQ%d\n", irq);
+	LOG_printf("l4timer: Using IRQ%d\n", irq);
 
 	setup_irq(irq, &l4timer_irq);
 
@@ -278,7 +283,9 @@ out3:
 	l4x_unregister_irq(irq);
 out2:
 	L4XV_FN_v(l4_task_delete_obj(L4RE_THIS_TASK_CAP, timer_irq_cap));
+#if 0
 out1:
+#endif
 	l4x_cap_free(timer_irq_cap);
 	return r;
 }

@@ -203,6 +203,7 @@ enum { NUM_DS_MAINMEM = 10 };
 static l4re_ds_t l4x_ds_mainmem[NUM_DS_MAINMEM] __nosavedata;
 void *l4x_main_memory_start;
 unsigned long l4x_vmalloc_memory_start;
+unsigned long l4x_vmalloc_memory_size;
 l4_kernel_info_t *l4lx_kinfo;
 l4_cap_idx_t l4x_user_gate[NR_CPUS];
 
@@ -368,6 +369,28 @@ static void l4x_virt_to_phys_show(void)
 	l4x_ioremap_show();
 }
 
+static spinlock_t migrate_lock;
+
+void          l4x_irq_save(unsigned long *flags)    { local_irq_save(*flags);    }
+void          l4x_irq_restore(unsigned long flags) { local_irq_restore(flags); }
+unsigned long l4x_hz(void)                         { return HZ;                }
+int           l4x_nr_irqs(void)                    { return NR_IRQS;           }
+void l4x_migrate_lock(unsigned long *flags) { spin_lock_irqsave(&migrate_lock, *flags); }
+void l4x_migrate_unlock(unsigned long flags) { spin_unlock_irqrestore(&migrate_lock, flags);}
+unsigned      l4x_smp_processor_id() { return smp_processor_id(); }
+
+
+unsigned l4x_target_cpu(const struct cpumask *dest)
+{
+	if (!cpumask_intersects(dest, cpu_online_mask))
+		return (unsigned) -1;
+	return cpumask_any_and(dest, cpu_online_mask);
+}
+
+void l4x_cpumask_copy(struct irq_data *data, const struct cpumask *dest) {
+	cpumask_copy(data->affinity, dest); }
+
+
 unsigned long l4x_virt_to_phys(volatile void * address)
 {
 	int i;
@@ -390,10 +413,10 @@ unsigned long l4x_virt_to_phys(volatile void * address)
 
 	/* Debugging check: don't miss a translation, can give nasty
 	 *                  DMA problems */
-	l4x_printf("%s: Could not translate virt. address %p\n",
+	LOG_printf("%s: Could not translate virt. address %p\n",
 	           __func__, address);
-	l4x_virt_to_phys_show();
-	WARN_ON(1);
+	//l4x_virt_to_phys_show();
+	//WARN_ON(1);
 
 	return __pa(address);
 }
@@ -430,7 +453,7 @@ void *l4x_phys_to_virt(unsigned long address)
 
 	/* Debugging check: don't miss a translation, can give nasty
 	 *                  DMA problems */
-	l4x_printf("%s: Could not translate phys. address 0x%lx\n",
+	LOG_printf("%s: Could not translate phys. address 0x%lx\n",
 	           __func__, address);
 	l4x_virt_to_phys_show();
 	WARN_ON(1);
@@ -552,7 +575,7 @@ int l4x_re_resolve_name(const char *name, l4_cap_idx_t *cap)
 
 	r = l4re_ns_query_srv(entry->cap, n + 1, *cap);
 	if (r) {
-		l4x_printf("Failed to query name '%s': %s(%d)\n",
+		LOG_printf("Failed to query name '%s': %s(%d)\n",
 		           name, l4sys_errtostr(r), r);
 		L4XV_U(f);
 		return -ENOENT;
@@ -730,6 +753,7 @@ static const int at_exit_nr_of_functions
 	= sizeof(at_exit_functions) / sizeof(at_exit_functions[0]);
 static int __current_exititem;
 
+#if 0
 static struct cxa_atexit_item *__next_atexit(void)
 {
 	if (__current_exititem >= at_exit_nr_of_functions) {
@@ -738,20 +762,9 @@ static struct cxa_atexit_item *__next_atexit(void)
 	}
 	return &at_exit_functions[__current_exititem++];
 }
+#endif
 
-int __cxa_atexit(void (*f)(void *), void *arg, void *dso_handle)
-{
-	struct cxa_atexit_item *h = __next_atexit();
-
-	if (!h)
-		return -1;
-
-	h->f = f;
-	h->arg = arg;
-	h->dso_handle = dso_handle;
-
-	return 0;
-}
+extern int __cxa_atexit(void (*f)(void *), void *arg, void *dso_handle);
 
 void __cxa_finalize(void *dso_handle)
 {
@@ -808,9 +821,19 @@ static inline int l4x_is_writable_area(unsigned long a)
 }
 static int l4x_forward_pf(l4_umword_t addr, l4_umword_t pc, int extra_write)
 {
+#if 0
 	l4_msgtag_t tag;
 	l4_umword_t err;
 	l4_utcb_t *u = l4_utcb();
+#endif
+
+	if (!extra_write)
+		l4_touch_ro((void*)l4_trunc_page(addr), L4_LOG2_PAGESIZE);
+	else
+		l4_touch_rw((void*)l4_trunc_page(addr), L4_LOG2_PAGESIZE);
+
+	// TODO: Reenable this part
+#if 0
 
 	do {
 		l4_msg_regs_t *mr = l4_utcb_mr_u(u);
@@ -833,6 +856,7 @@ static int l4x_forward_pf(l4_umword_t addr, l4_umword_t pc, int extra_write)
 		// unresolvable page fault, we're supposed to trigger an
 		// exception
 		return 0;
+#endif
 
 	return 1;
 }
@@ -1091,22 +1115,25 @@ static void __init l4x_reserve_vmalloc_space(void)
 	unsigned long sz;
 	unsigned flags   = L4RE_RM_SEARCH_ADDR;
 
+	l4x_vmalloc_memory_start = ((((unsigned long)l4x_main_memory_start + l4x_mainmem_size) +
+	                              VMALLOC_OFFSET) & ~(VMALLOC_OFFSET - 1));
+
 #if defined(CONFIG_X86_64)
-	l4x_vmalloc_memory_start = VMALLOC_START;
 	flags &= ~L4RE_RM_SEARCH_ADDR;
 	sz = VMALLOC_END - VMALLOC_START + 1;
 #elif defined(CONFIG_X86_32)
-	l4x_vmalloc_memory_start = (unsigned long)l4x_main_memory_start;
 	sz = __VMALLOC_RESERVE;
 #elif defined(CONFIG_ARM)
-	l4x_vmalloc_memory_start = (unsigned long)l4x_main_memory_start;
 	sz = VMALLOC_SIZE << 20;
 #else
 #error Check this for your architecture
 #endif
 
+	l4x_vmalloc_memory_size = sz;
+
 	if (l4re_rm_reserve_area(&l4x_vmalloc_memory_start,
-	                         sz, flags, PGDIR_SHIFT)) {
+	                          l4x_vmalloc_memory_size,
+	                          flags, ilog2(VMALLOC_OFFSET))) {
 		LOG_printf("l4x: Error reserving vmalloc memory area of %ldBytes!\n", sz);
 		l4x_exit_l4linux();
 	}
@@ -1293,7 +1320,7 @@ void __init l4x_setup_memory(char *cmdl,
 
 #ifdef ARCH_x86
 	// fixmap area
-	l4x_fixmap_space_start = (unsigned long)l4x_main_memory_start;
+	l4x_fixmap_space_start = (unsigned long)l4x_vmalloc_memory_start + l4x_vmalloc_memory_size;
 	if (l4re_rm_reserve_area(&l4x_fixmap_space_start,
 	                         __end_of_fixed_addresses * PAGE_SIZE,
 	                         L4RE_RM_SEARCH_ADDR, PAGE_SHIFT) < 0) {
@@ -1400,6 +1427,10 @@ static int l4x_sanity_check_kuser_cmpxchg(void)
 
 static void l4x_create_ugate(l4_cap_idx_t forthread, unsigned cpu)
 {
+	LOG_printf("thread=%lx cpu=%x\n", forthread, cpu);
+	l4x_user_gate[cpu] = forthread;
+
+#if 0
 	l4_msgtag_t r;
 
 	l4x_user_gate[cpu] = l4x_cap_alloc_noctx();
@@ -1420,6 +1451,7 @@ static void l4x_create_ugate(l4_cap_idx_t forthread, unsigned cpu)
 		l4_debugger_set_object_name(l4x_user_gate[cpu], n);
 #endif
 	}
+#endif
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
@@ -1621,11 +1653,15 @@ void l4x_cpu_ipi_setup(unsigned cpu)
 		l4x_exit_l4linux();
 	}
 
+#if 0
 	t = l4_factory_create_irq(l4re_env()->factory, c);
 	if (l4_error(t)) {
 		LOG_printf("Failed to create IRQ\n");
 		l4x_exit_l4linux();
 	}
+#else
+	l4lx_thread_alloc_irq(c);
+#endif
 
 #ifdef CONFIG_L4_DEBUG_REGISTER_NAMES
 	snprintf(s, sizeof(s), "l4lx.ipi%d", cpu);
@@ -1681,6 +1717,13 @@ static L4_CV void __cpuinit __cpu_starter(void *data)
 
 	current_thread_info()->cpu = cpu;
 	l4x_stack_set(current_thread_info(), l4_utcb());
+
+#ifdef ARCH_x86
+	asm volatile("movl %%ds,  %%eax \n"
+	             "movl %%eax, %%fs  \n"  // fs == ds for percpu
+		     : : : "eax", "memory");
+#endif
+
 	l4x_create_ugate(l4x_cap_current(), cpu);
 	l4lx_thread_pager_change(l4x_cap_current(), l4x_start_thread_id);
 
@@ -1890,8 +1933,12 @@ static inline void l4x_repnop_init(void) {}
 
 static __init int l4x_cpu_virt_phys_map_init(const char *boot_command_line)
 {
+#ifdef CONFIG_SMP
 	l4_umword_t max_cpus = 1;
+#if 0
 	l4_sched_cpu_set_t cs = l4_sched_cpu_set(0, 0, 0);
+#endif
+#endif
 	unsigned i;
 
 #ifdef CONFIG_SMP
@@ -1907,9 +1954,10 @@ static __init int l4x_cpu_virt_phys_map_init(const char *boot_command_line)
 		}
 	}
 
-
+#if 0
 	if (l4_error(l4_scheduler_info(l4re_env()->scheduler,
 	                               &max_cpus, &cs)) == L4_EOK) {
+#endif
 		if ((p = strstr(boot_command_line, "l4x_cpus_map="))) {
 			// l4x_cpus_map=0,1,2,3,4,...
 			// the list specifies the physical CPU for each
@@ -1931,10 +1979,12 @@ static __init int l4x_cpu_virt_phys_map_init(const char *boot_command_line)
 					LOG_printf("ERROR: Error parsing l4x_cpus_map option\n");
 					return 1;
 				}
+#if 0
 				if (!l4x_cpu_check_pcpu(pcpu, max_cpus)) {
 					LOG_printf("ERROR: pCPU%d not found\n", pcpu);
 					return 1;
 				}
+#endif
 				l4x_cpu_physmap[l4x_nr_cpus].phys_id = pcpu;
 				for (i = 0; i < l4x_nr_cpus; ++i)
 					overbooking |=
@@ -1958,12 +2008,16 @@ static __init int l4x_cpu_virt_phys_map_init(const char *boot_command_line)
 			l4x_nr_cpus = v;
 
 		}
+#if 0
 	}
+#endif
 #ifndef CONFIG_L4_VCPU
 	l4x_tamed_set_mapping(0, l4x_cpu_physmap_get_id(0));
 #endif
 
 #else /* UP */
+
+#if 0
 	if (l4_error(l4_scheduler_info(l4re_env()->scheduler,
 	                               &max_cpus, &cs)) == L4_EOK) {
 
@@ -1972,6 +2026,8 @@ static __init int l4x_cpu_virt_phys_map_init(const char *boot_command_line)
 			p = find_first_bit(&cs.map, sizeof(cs.map) * 8);
 		l4x_cpu_physmap[0].phys_id = p;
 	}
+#endif
+	l4x_cpu_physmap[0].phys_id = 0;
 #endif
 
 	LOG_printf("CPU mapping (l:p)[%d]: ", l4x_nr_cpus);
@@ -2035,14 +2091,15 @@ static L4_CV void __init cpu0_startup(void *data)
 	ti->cpu = 0;
 	l4x_stack_set(ti, l4_utcb());
 
-	l4x_create_ugate(cpu0id, 0);
-	l4lx_thread_pager_change(cpu0id, l4x_start_thread_id);
-
 #ifdef ARCH_x86
 	asm volatile("movl %%ds,  %%eax \n"
 	             "movl %%eax, %%fs  \n"  // fs == ds for percpu
 		     : : : "eax", "memory");
 #endif
+
+	l4x_create_ugate(cpu0id, 0);
+	l4lx_thread_pager_change(cpu0id, l4x_start_thread_id);
+
 #ifdef CONFIG_L4_VCPU
 	l4x_vcpu_init(this_cpu_read(l4x_vcpu_ptr));
 #endif
@@ -2291,7 +2348,7 @@ static void l4x_scan_hw_resources(void)
 	LOG_printf("Device scan done.\n");
 }
 
-int __init_refok L4_CV main(int argc, char **argv)
+int __init_refok L4_CV linux_main(int argc, char **argv)
 {
 	l4lx_thread_t main_id;
 	struct l4lx_thread_start_info_t si;
@@ -2403,10 +2460,13 @@ int __init_refok L4_CV main(int argc, char **argv)
 
 	l4x_start_thread_id = l4re_env()->main_thread;
 
+#if 0
 	l4_thread_control_start();
 	l4_thread_control_commit(l4x_start_thread_id);
 	l4x_start_thread_pager_id
 		= l4_utcb_mr()->mr[L4_THREAD_CONTROL_MR_IDX_PAGER];
+#endif
+	l4x_start_thread_pager_id = l4re_env()->rm;
 
 #ifndef CONFIG_L4_VCPU
 #ifdef CONFIG_L4_TAMED
@@ -3164,6 +3224,10 @@ static inline int l4x_handle_pagefault(unsigned long pfa, unsigned long ip,
 		/* Not resolvable: Ooops */
 		LOG_printf("Non-resolvable page fault at %lx, ip %lx.\n", pfa, ip);
 		// will trigger an oops in caller
+
+#ifdef CONFIG_L4_DEBUG_SEGFAULTS
+		enter_kdebug("PF");
+#endif
 		return 0;
 	}
 
@@ -3360,7 +3424,9 @@ void l4x_swsusp_after_resume(void)
 void exit(int code)
 {
 	__cxa_finalize(0);
+#if 0
 	l4x_external_exit(code);
+#endif
 	LOG_printf("Still alive, going zombie???\n");
 	l4_sleep_forever();
 }

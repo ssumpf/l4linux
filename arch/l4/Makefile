@@ -175,6 +175,14 @@ KBUILD_CFLAGS += -fno-asynchronous-unwind-tables
 KBUILD_CFLAGS += $(call cc-option,-mno-sse -mno-mmx -mno-sse2 -mno-3dnow,)
 KBUILD_CFLAGS += $(call cc-option,-mno-avx,)
 
+#
+# Prevent the gcc from linking Linux functions into compiler-generated
+# Genode stuff.
+#
+KBUILD_CFLAGS += -Dmemmove=lx_memmove -Dmemset=lx_memset -Dmemcpy=lx_memcpy
+KBUILD_CFLAGS += -Dstrlen=lx_strlen -Dabort=lx_abort
+
+
 endif
 
 ifeq ($(BASEARCH),arm)
@@ -259,6 +267,8 @@ endif
 
 endif
 
+# Genode compiler is build without Linux defines.
+KBUILD_CFLAGS  +=-D__linux__ -Dlinux
 
 # -----------------------------------------------
 
@@ -281,14 +291,15 @@ L4LX_E_L-$(CONFIG_L4_PDSPBLK_DRV)  += pers_dsp
 L4LX_E_L-$(CONFIG_L4_TCG_STPM)     += stpm-client
 L4LX_E_L-$(CONFIG_L4_FERRET)       += ferret
 
-L4INC		= -I$(L4OBJ)/include/$(L4_MK_ARCH)/$(L4_MK_API) \
-		  -I$(L4OBJ)/include/$(L4_MK_ARCH) \
-		  -I$(L4OBJ)/include/$(L4_MK_API) \
-		  -I$(L4OBJ)/include
+#L4INC		= -I$(L4OBJ)/include/$(L4_MK_ARCH)/$(L4_MK_API) \
+#		  -I$(L4OBJ)/include/$(L4_MK_ARCH) \
+#		  -I$(L4OBJ)/include/$(L4_MK_API) \
+#		  -I$(L4OBJ)/include
 
 head-y := arch/l4/kernel/head.o
 
-libs-y				+= arch/l4/lib/arch-$(BASEARCH)/	\
+libs-y				+= arch/l4/lib/arch-$(BASEARCH)/
+#\
 				   arch/l4/l4lxlib/generic/		\
 				   arch/l4/l4lxlib/$(BASEENV)/
 
@@ -307,7 +318,7 @@ endif
 
 core-y += arch/l4/
 
--include $(L4OBJ)/l4defs.mk.inc
+#-include $(L4OBJ)/l4defs.mk.inc
 
 L4_REQUIRED_MODS		:= libc_be_minimal_log_io \
                                    libc_minimal libc_minimal_l4re \
@@ -323,15 +334,17 @@ $(info  L4_REQUIRED_MODS: $(L4_REQUIRED_MODS))
 $(error Aborting.)
 endif
 
-libs-y				+= -Bstatic $(L4_LIBDIRS) -ll4sys -ll4sys-direct -lgcc-l4
+libs-y				+= -Bstatic $(L4_LIBDIRS)
+#-ll4sys -ll4sys-direct -lgcc-l4
+libs-y				+= $(GENODE_LIBS)
 export L4INC L4_REQUIRED_MODS
 
-LDFLAGS_vmlinux  =  \
-  --defsym __L4_KIP_ADDR__=$(L4_BID_KIP_ADDR) \
+LDFLAGS_vmlinux  =  -nostdlib
+#  --defsym __L4_KIP_ADDR__=$(L4_BID_KIP_ADDR) \
   --defsym __l4sys_invoke_direct=$(L4_BID_KIP_ADDR)+$(L4_BID_KIP_OFFS_SYS_INVOKE) \
   --defsym __l4sys_debugger_direct=$(L4_BID_KIP_ADDR)+$(L4_BID_KIP_OFFS_SYS_DEBUGGER)
 
-KBUILD_CPPFLAGS	+= -Iarch/l4/include/asm/l4-arch \
+KBUILD_CPPFLAGS	+= $(GENODE_INCLUDES) -Iarch/l4/include/asm/l4-arch \
 		   -Iarch/$(LINSRCARCH)/include/generated \
 		   -Iarch/$(LINSRCARCH)/include/generated/uapi \
 		   $(if $(PLATFORMNAME),-I$(src)/arch/l4/include/asm/mach-$(LINSRCARCH)/$(PLATFORMNAME)) \
@@ -355,6 +368,8 @@ ifneq ($(CONFIG_L4_ARCH_ARM),)
 KBUILD_CPPFLAGS += -DTEXT_OFFSET=0x02000000
 endif
 
+drivers-y += arch/l4/drivers/
+
 all: lImage
 
 boot := arch/l4/boot
@@ -363,11 +378,11 @@ lImage: check_for_l4defs $(if $(CONFIG_L4_SERVER),server) vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $@
 
 check_for_l4defs:
-	$(Q)if [ ! -e $(L4OBJ)/l4defs.mk.inc ]; then \
-	  echo "No $(L4OBJ)/l4defs.mk.inc available."; \
-	  echo "Did you run 'make' in $(L4OBJ) to a successful end?"; \
-	  exit 1; \
-	fi
+#	$(Q)if [ ! -e $(L4OBJ)/l4defs.mk.inc ]; then \
+#	  echo "No $(L4OBJ)/l4defs.mk.inc available."; \
+#	  echo "Did you run 'make' in $(L4OBJ) to a successful end?"; \
+#	  exit 1; \
+#	fi
 
 server:
 	$(Q)$(MAKE) $(build)=arch/l4/server

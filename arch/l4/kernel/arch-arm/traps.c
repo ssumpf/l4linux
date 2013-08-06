@@ -68,6 +68,7 @@ void dump_backtrace_entry(unsigned long where, unsigned long from, unsigned long
 		dump_mem("", "Exception stack", frame + 4, frame + 4 + sizeof(struct pt_regs));
 }
 
+#if 0
 #ifndef CONFIG_ARM_UNWIND
 /*
  * Stack pointers should always be within the kernels view of
@@ -82,6 +83,7 @@ static int verify_stack(unsigned long sp)
 
 	return 0;
 }
+#endif
 #endif
 
 /*
@@ -172,6 +174,7 @@ static inline void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 #else
 static void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 {
+#if 0
 	unsigned int fp, mode;
 	int ok = 1;
 
@@ -203,6 +206,7 @@ static void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 
 	if (ok)
 		c_backtrace(fp, mode);
+#endif
 }
 #endif
 

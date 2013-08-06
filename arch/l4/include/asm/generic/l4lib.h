@@ -3,6 +3,7 @@
 
 #include <linux/stringify.h>
 
+#if 0
 #ifdef ARCH_arm
 #define L4_EXTERNAL_FUNC(func) \
 	asm(".section \".data.l4externals.str\"                         \n" \
@@ -58,5 +59,8 @@
 	    ".previous                                                  \n" \
 	   )
 #endif
+#endif
+
+#define L4_EXTERNAL_FUNC(func) ;
 
 #endif /* __INCLUDE__ASM_L4__GENERIC__L4LIB_H__ */

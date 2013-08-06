@@ -33,7 +33,7 @@ OUTPUT_FORMAT(CONFIG_OUTPUT_FORMAT, CONFIG_OUTPUT_FORMAT, CONFIG_OUTPUT_FORMAT)
 
 #ifdef CONFIG_X86_32
 OUTPUT_ARCH(i386)
-ENTRY(phys_startup_32)
+ENTRY(_start)
 jiffies = jiffies_64;
 #else
 OUTPUT_ARCH(i386:x86-64)
@@ -68,15 +68,8 @@ jiffies_64 = jiffies;
 #endif
 
 PHDRS {
-	text PT_LOAD FLAGS(5);          /* R_E */
-	data PT_LOAD FLAGS(6);          /* RW_ */
-#ifdef CONFIG_X86_64
-#ifdef CONFIG_SMP
-	percpu PT_LOAD FLAGS(6);        /* RW_ */
-#endif
-	init PT_LOAD FLAGS(7);          /* RWE */
-#endif
-	note PT_NOTE FLAGS(0);          /* ___ */
+	ro   PT_LOAD;
+	rw   PT_LOAD;
 }
 
 SECTIONS
@@ -96,6 +89,29 @@ SECTIONS
 	/*_stext = .;*/
 	.text :  AT(ADDR(.text) - LOAD_OFFSET) {
 		_text = .;
+		_prog_img_beg = .;
+
+		/*
+		 * Leave space for parent capability parameters at start of data
+		 * section. The protection domain creator is reponsible for storing
+		 * sane values here.
+		 */
+		_parent_cap = .;
+		_parent_cap_thread_id = .;
+		LONG(0xffffffff);
+		_parent_cap_local_name = .;
+		LONG(0xffffffff);
+
+		/*
+		 * Platform-specific entry for Fiasco.OC.
+		 *
+		 * PIC-code compiled for Fiasco.OC, needs some PIC-compatible
+		 * way to enter the kernel, the fixed address of the kernel
+		 * entry code address needs to be found here.
+		 */
+		__l4sys_invoke_indirect = .;
+		LONG(0xeacff000);
+
 		/* bootstrapping code */
 		HEAD_TEXT
 #ifdef CONFIG_X86_32
@@ -111,19 +127,55 @@ SECTIONS
 		ENTRY_TEXT
 		IRQENTRY_TEXT
 		*(.fixup)
+		*(.text.*) /* put all Genode .text entries in here */
 		*(.gnu.warning)
+
+		. = ALIGN(0x08);
+
+		_ctors_start = .;
+		KEEP (*(.ctors))
+		KEEP (*(SORT(.ctors.*)))
+		KEEP (*(.init_array)) /* list of constructors specific for ARM eabi */
+		_ctors_end = .;
+		_dtors_start = .;
+		KEEP (*(SORT(.dtors.*)))
+		KEEP (*(.dtors))
+		_dtors_end = .;
+
 		/* End of text section */
 		_etext = .;
-	} :text = 0x9090
+	} : rw
 
-	NOTES :text :note
+	NOTES :rw
 
-	EXCEPTION_TABLE(16) :text = 0x9090
+	.eh_frame_hdr : { *(.eh_frame_hdr) }
 
 #if defined(CONFIG_DEBUG_RODATA)
 	/* .text should occupy whole number of pages */
 	. = ALIGN(PAGE_SIZE);
 #endif
+
+	/*
+	 * because in Genode we collect all data.* entries in the data section
+	 * we have to put the per_cpu section before defining the data section
+	 * otherwise it's symbols would end up in the data section too.
+	 */
+#if !defined(CONFIG_X86_64) || !defined(CONFIG_SMP)
+	PERCPU_SECTION(INTERNODE_CACHE_BYTES)
+#endif
+
+	/*
+	 * smp_locks might be freed after init
+	 * start/end must be page aligned
+	 */
+	. = ALIGN(PAGE_SIZE);
+	.smp_locks : AT(ADDR(.smp_locks) - LOAD_OFFSET) {
+		__smp_locks = .;
+		*(.smp_locks)
+		. = ALIGN(PAGE_SIZE);
+		__smp_locks_end = .;
+	}
+
 	X64_ALIGN_DEBUG_RODATA_BEGIN
 	RO_DATA(PAGE_SIZE)
 	X64_ALIGN_DEBUG_RODATA_END
@@ -151,9 +203,33 @@ SECTIONS
 		/* rarely changed data like cpu maps */
 		READ_MOSTLY_DATA(INTERNODE_CACHE_BYTES)
 
+		*(.data.*) /* put all Genode .data entries in here */
+
+
 		/* End of data section */
 		_edata = .;
-	} :data
+	} : rw
+
+	EXCEPTION_TABLE(16) : rw
+
+	/* exception frames for C++ */
+	.eh_frame : {
+		__eh_frame_start__ = .;
+		KEEP (*(.eh_frame))
+		LONG(0)
+	} : rw
+
+	.init_array : {
+		__init_array_start = .;
+		KEEP (*(SORT(.init_array.*)))
+		KEEP (*(.init_array))
+		__init_array_end = .;
+	}
+
+	.gcc_except_table : {
+		KEEP(*(.gcc_except_table))
+		KEEP(*(.gcc_except_table.*))
+	}
 
 #ifdef CONFIG_X86_64
 
@@ -273,27 +349,11 @@ SECTIONS
 		EXIT_DATA
 	}
 
-#if !defined(CONFIG_X86_64) || !defined(CONFIG_SMP)
-	PERCPU_SECTION(INTERNODE_CACHE_BYTES)
-#endif
-
 	. = ALIGN(PAGE_SIZE);
 
 	/* freed after init ends here */
 	.init.end : AT(ADDR(.init.end) - LOAD_OFFSET) {
 		__init_end = .;
-	}
-
-	/*
-	 * smp_locks might be freed after init
-	 * start/end must be page aligned
-	 */
-	. = ALIGN(PAGE_SIZE);
-	.smp_locks : AT(ADDR(.smp_locks) - LOAD_OFFSET) {
-		__smp_locks = .;
-		*(.smp_locks)
-		. = ALIGN(PAGE_SIZE);
-		__smp_locks_end = .;
 	}
 
 #ifdef CONFIG_X86_64
@@ -308,6 +368,7 @@ SECTIONS
 		__bss_start = .;
 		*(.bss..page_aligned)
 		*(.bss)
+		*(.bss.*) /* put all Genode .bss entries in here */
 		. = ALIGN(PAGE_SIZE);
 		__bss_stop = .;
 	}
@@ -320,6 +381,7 @@ SECTIONS
 		__brk_limit = .;
 	}
 
+	_prog_img_end = .;
 	_end = .;
 
         STABS_DEBUG
