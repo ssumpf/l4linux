@@ -819,21 +819,13 @@ static inline int l4x_is_writable_area(unsigned long a)
 	       || ((unsigned long)&__bss_start <= a
 	           && a < (unsigned long)&__bss_stop);
 }
+
+#if 0
 static int l4x_forward_pf(l4_umword_t addr, l4_umword_t pc, int extra_write)
 {
-#if 0
 	l4_msgtag_t tag;
 	l4_umword_t err;
 	l4_utcb_t *u = l4_utcb();
-#endif
-
-	if (!extra_write)
-		l4_touch_ro((void*)l4_trunc_page(addr), L4_LOG2_PAGESIZE);
-	else
-		l4_touch_rw((void*)l4_trunc_page(addr), L4_LOG2_PAGESIZE);
-
-	// TODO: Reenable this part
-#if 0
 
 	do {
 		l4_msg_regs_t *mr = l4_utcb_mr_u(u);
@@ -856,10 +848,12 @@ static int l4x_forward_pf(l4_umword_t addr, l4_umword_t pc, int extra_write)
 		// unresolvable page fault, we're supposed to trigger an
 		// exception
 		return 0;
-#endif
 
 	return 1;
 }
+#else
+extern L4_CV int l4x_forward_pf(l4_umword_t addr, l4_umword_t pc, int extra_write);
+#endif
 
 #ifdef CONFIG_X86
 /*
