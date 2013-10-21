@@ -377,7 +377,7 @@ unsigned long l4x_hz(void)                         { return HZ;                }
 int           l4x_nr_irqs(void)                    { return NR_IRQS;           }
 void l4x_migrate_lock(unsigned long *flags) { spin_lock_irqsave(&migrate_lock, *flags); }
 void l4x_migrate_unlock(unsigned long flags) { spin_unlock_irqrestore(&migrate_lock, flags);}
-unsigned      l4x_smp_processor_id() { return smp_processor_id(); }
+unsigned      l4x_smp_processor_id(void) { return smp_processor_id(); }
 
 
 unsigned l4x_target_cpu(const struct cpumask *dest)
@@ -751,9 +751,9 @@ struct cxa_atexit_item {
 static struct cxa_atexit_item at_exit_functions[10];
 static const int at_exit_nr_of_functions
 	= sizeof(at_exit_functions) / sizeof(at_exit_functions[0]);
+#ifdef NOT_GENODE
 static int __current_exititem;
 
-#if 0
 static struct cxa_atexit_item *__next_atexit(void)
 {
 	if (__current_exititem >= at_exit_nr_of_functions) {
@@ -762,7 +762,6 @@ static struct cxa_atexit_item *__next_atexit(void)
 	}
 	return &at_exit_functions[__current_exititem++];
 }
-#endif
 
 extern int __cxa_atexit(void (*f)(void *), void *arg, void *dso_handle);
 
@@ -783,11 +782,11 @@ void __cxa_finalize(void *dso_handle)
 	}
 }
 
-
 int atexit(void (*function)(void))
 {
 	return __cxa_atexit((void (*)(void*))function, 0, 0);
 }
+#endif
 
 void
 l4x_linux_main_exit(void)
@@ -819,21 +818,13 @@ static inline int l4x_is_writable_area(unsigned long a)
 	       || ((unsigned long)&__bss_start <= a
 	           && a < (unsigned long)&__bss_stop);
 }
+
+#if 0
 static int l4x_forward_pf(l4_umword_t addr, l4_umword_t pc, int extra_write)
 {
-#if 0
 	l4_msgtag_t tag;
 	l4_umword_t err;
 	l4_utcb_t *u = l4_utcb();
-#endif
-
-	if (!extra_write)
-		l4_touch_ro((void*)l4_trunc_page(addr), L4_LOG2_PAGESIZE);
-	else
-		l4_touch_rw((void*)l4_trunc_page(addr), L4_LOG2_PAGESIZE);
-
-	// TODO: Reenable this part
-#if 0
 
 	do {
 		l4_msg_regs_t *mr = l4_utcb_mr_u(u);
@@ -856,10 +847,12 @@ static int l4x_forward_pf(l4_umword_t addr, l4_umword_t pc, int extra_write)
 		// unresolvable page fault, we're supposed to trigger an
 		// exception
 		return 0;
-#endif
 
 	return 1;
 }
+#else
+extern L4_CV int l4x_forward_pf(l4_umword_t addr, l4_umword_t pc, int extra_write);
+#endif
 
 #ifdef CONFIG_X86
 /*
@@ -3388,7 +3381,9 @@ void __noreturn l4x_exit_l4linux(void)
 {
 	l4_msgtag_t tag = l4_msgtag(L4X_SERVER_EXIT, 0, 0, 0);
 
+#ifdef NOT_GENODE
 	__cxa_finalize(0);
+#endif
 
 	if (l4_msgtag_has_error(l4_ipc_send(l4x_start_thread_id, l4_utcb(), tag, L4_IPC_NEVER)))
 		LOG_printf("IPC ERROR l4x_exit_l4linux\n");
@@ -3423,8 +3418,8 @@ void l4x_swsusp_after_resume(void)
 
 void exit(int code)
 {
+#ifdef NOT_GENODE
 	__cxa_finalize(0);
-#if 0
 	l4x_external_exit(code);
 #endif
 	LOG_printf("Still alive, going zombie???\n");
