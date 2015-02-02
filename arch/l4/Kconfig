@@ -238,19 +238,21 @@ config L4_TCG_STPM
 	help
 	  Support for (virtual) TPMs provided by the L4 service STPM of TUD:OS.
 
-config SCREEN_GENODE
+config GENODE_SCREEN
 	bool
 	select FB_CFB_FILLRECT
 	select FB_CFB_COPYAREA
 	select FB_CFB_IMAGEBLIT
 	default y
 
-config SERIAL_GENODE
+config GENODE_SERIAL
 	bool
 	default y
 	select SERIAL_CORE
 	select SERIAL_CORE_CONSOLE
 
+config GENODE_BALLOON
+	bool
 
 endmenu # stub drivers
 
