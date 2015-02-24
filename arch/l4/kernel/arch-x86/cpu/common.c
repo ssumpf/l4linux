@@ -267,8 +267,10 @@ __setup("nosmep", setup_disable_smep);
 
 static __always_inline void setup_smep(struct cpuinfo_x86 *c)
 {
+#ifndef CONFIG_L4
 	if (cpu_has(c, X86_FEATURE_SMEP))
 		set_in_cr4(X86_CR4_SMEP);
+#endif
 }
 
 static __init int setup_disable_smap(char *arg)
