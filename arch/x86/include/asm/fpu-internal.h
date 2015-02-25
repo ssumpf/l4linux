@@ -89,7 +89,12 @@ static inline int is_x32_frame(void)
 
 static __always_inline __pure bool use_eager_fpu(void)
 {
-	return static_cpu_has(X86_FEATURE_EAGER_FPU);
+	/*
+	 * Always return false, otherwise the BUG_ON function in
+	 * 'do_device_not_available' (traps.c) triggers
+	 * (review on L4Linux update)
+	 */
+	return false;
 }
 
 static __always_inline __pure bool use_xsaveopt(void)
